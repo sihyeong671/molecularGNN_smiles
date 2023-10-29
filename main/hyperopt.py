@@ -13,6 +13,8 @@ import torch.optim as optim
 
 from sklearn.metrics import roc_auc_score, mean_squared_error
 
+import wandb
+
 import preprocess as pp
 
 
@@ -203,11 +205,11 @@ def predict(model, dataset):
         data_batch = list(zip(*dataset[i:i+batch_test]))
         pred = model.predict(data_batch)
         pred_lst += pred
-    submit["HLM"] = pred_lst
-    submit.to_csv("HLM.csv", index=False)
+    submit["MLM"] = pred_lst
+    submit.to_csv("MLM.csv", index=False)
 
 
-def main():
+def objective(config):
 
     if torch.cuda.is_available():
         device = torch.device('cuda')
@@ -232,7 +234,7 @@ def main():
     print('Creating a model.')
     torch.manual_seed(1234)
     model = MolecularGraphNeuralNetwork(
-            N_fingerprints, dim, layer_hidden, layer_output, device).to(device)
+            N_fingerprints, config.dim, config.layer_hidden, config.layer_output, device).to(device)
     trainer = Trainer(model)
     tester = Tester(model)
     print('# of model parameters:',
@@ -282,7 +284,7 @@ def main():
             early_stopping = 0
             best_model = deepcopy(model)
             os.makedirs("ckpt", exist_ok=True)
-            torch.save(model, f"ckpt/best_rmse_HLM_model.pth")
+            torch.save(model, f"ckpt/best_rmse_model.pth")
         
         result = f"{epoch}\t{time:.5f}\t{loss_train:.5f}\t{prediction_test:.5f}"
 
@@ -292,16 +294,49 @@ def main():
         if early_stopping > 20:
             print("Early Stopping!")
             break
+    return best_score
     
 
-    print("Predicting...")
-    predict(best_model, dataset_pred)
+    # print("Predicting...")
+    # predict(best_model, dataset_pred)
 
-    print("FIN")
+    # print("FIN")
+
+
+
+
+def main():
+    wandb.init(
+        entity="bsh",
+        project="dacon-ai-drug",
+    )
+
+    test_score = objective(wandb.config)
+
+    wandb.log({
+        "test_score": test_score
+    })
+
 
 
 if __name__ == "__main__":
 
+    sweep_configuration = {
+        'name': 'HLM',
+        'method': 'random',
+        'metric': 
+            {
+                'goal': 'minimize', 
+                'name': 'test_score'
+            },
+        'parameters': 
+            {
+                # 'radius': {'values': [1, 2, 3]},
+                'dim': {'values': [50*i for i in range(1, 5)]},
+                'layer_hidden': {'values': [i for i in range(5, 11)]},
+                'layer_output': {'values': [i for i in range(5, 11)]},
+            }
+    }
 
     task = "regression"
     dataset = "dacon_HLM"
@@ -311,13 +346,15 @@ if __name__ == "__main__":
     lr_decay = 0.99
     decay_interval = 10
     save_interval = 100
-    iteration = 500
+    iteration=500
     radius = 1
-    dim = 150
-    layer_hidden = 6
-    layer_output = 10
 
-    main()
+    sweep_id = wandb.sweep(
+        sweep=sweep_configuration,
+        project="dacon-ai-drug"
+    )
+
+    wandb.agent(sweep_id, function=main, count=20)
 
     
     

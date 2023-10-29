@@ -100,7 +100,7 @@ def create_datasets(task, dataset, radius, device):
 
         """Load a dataset."""
         with open(dir_dataset + filename, 'r') as f:
-            smiles_property = f.readline().strip().split()
+            # smiles_property = f.readline().strip().split()
             data_original = f.read().strip().split('\n')
 
         """Exclude the data contains '.' in its smiles."""
@@ -136,10 +136,48 @@ def create_datasets(task, dataset, radius, device):
 
         return dataset
 
+    def create_pred_dataset(filename):
+
+        print(filename)
+
+        """Load a dataset."""
+        with open(dir_dataset + filename, 'r') as f:
+            data_original = f.read().strip().split('\n')
+
+        """Exclude the data contains '.' in its smiles."""
+        data_original = [data for data in data_original
+                         if '.' not in data.split()[0]]
+
+        dataset = []
+
+        for data in data_original:
+
+            smiles = data
+
+            """Create each data with the above defined functions."""
+            mol = Chem.AddHs(Chem.MolFromSmiles(smiles))
+            atoms = create_atoms(mol, atom_dict)
+            molecular_size = len(atoms)
+            i_jbond_dict = create_ijbonddict(mol, bond_dict)
+            fingerprints = extract_fingerprints(radius, atoms, i_jbond_dict,
+                                                fingerprint_dict, edge_dict)
+            adjacency = Chem.GetAdjacencyMatrix(mol)
+
+            """Transform the above each data of numpy
+            to pytorch tensor on a device (i.e., CPU or GPU).
+            """
+            fingerprints = torch.LongTensor(fingerprints).to(device)
+            adjacency = torch.FloatTensor(adjacency).to(device)
+
+            dataset.append((fingerprints, adjacency, molecular_size))
+
+        return dataset
+
     dataset_train = create_dataset('data_train.txt')
-    dataset_train, dataset_dev = split_dataset(dataset_train, 0.9)
     dataset_test = create_dataset('data_test.txt')
+    dataset_pred = create_pred_dataset('data_pred.txt')
+
 
     N_fingerprints = len(fingerprint_dict)
 
-    return dataset_train, dataset_dev, dataset_test, N_fingerprints
+    return dataset_train, dataset_test, dataset_pred, N_fingerprints
